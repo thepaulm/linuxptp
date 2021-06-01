@@ -89,10 +89,12 @@ int clockcheck_sample(struct clockcheck *cc, uint64_t ts)
 				     mono_interval - 1.0);
 
 		if (min_foffset > cc->freq_limit) {
+			printf("clockcheck over fail: %lf > %d\n", min_foffset, cc->freq_limit);
 			pr_warning("clockcheck: clock jumped forward or"
 					" running faster than expected!");
 			ret = 1;
 		} else if (max_foffset < -cc->freq_limit) {
+			printf("clockcheck under fail: %lf < %d\n", max_foffset, -cc->freq_limit);
 			pr_warning("clockcheck: clock jumped backward or"
 					" running slower than expected!");
 			ret = 1;

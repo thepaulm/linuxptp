@@ -52,6 +52,7 @@ static int64_t sysoff_estimate(struct ptp_clock_time *pct, int extended,
 	int64_t interval, timestamp, offset;
 	int64_t shortest_interval, best_timestamp, best_offset;
 	int i = 0;
+	printf("sysoff extimate\n");
 
 	if (extended) {
 		t1 = pctns(&pct[3*i]);
@@ -66,6 +67,7 @@ static int64_t sysoff_estimate(struct ptp_clock_time *pct, int extended,
 	best_timestamp = (t2 + t1) / 2;
 	best_offset = best_timestamp - tp;
 
+	printf("sysoff n_samples: %d\n", n_samples);
 	for (i = 1; i < n_samples; i++) {
 		if (extended) {
 			t1 = pctns(&pct[3*i]);
@@ -78,6 +80,7 @@ static int64_t sysoff_estimate(struct ptp_clock_time *pct, int extended,
 		}
 		interval = t2 - t1;
 		timestamp = (t2 + t1) / 2;
+		printf("timestamp %d is %lu\n", i, timestamp);
 		offset = timestamp - tp;
 		if (interval < shortest_interval) {
 			shortest_interval = interval;
@@ -87,6 +90,7 @@ static int64_t sysoff_estimate(struct ptp_clock_time *pct, int extended,
 	}
 	*ts = best_timestamp;
 	*delay = shortest_interval;
+	printf("sysoff estimate done\n");
 	return best_offset;
 }
 
@@ -108,12 +112,18 @@ static int sysoff_basic(int fd, int n_samples,
 			int64_t *result, uint64_t *ts, int64_t *delay)
 {
 	struct ptp_sys_offset pso;
+	printf("sysoff basic started ...\n");
+	fflush(stdout);
 	memset(&pso, 0, sizeof(pso));
 	pso.n_samples = n_samples;
+	printf("ioctl started ...\n");
+	fflush(stdout);
 	if (ioctl(fd, PTP_SYS_OFFSET, &pso)) {
 		perror("ioctl PTP_SYS_OFFSET");
 		return SYSOFF_RUN_TIME_MISSING;
 	}
+	printf("ioctl done\n");
+	fflush(stdout);
 	*result = sysoff_estimate(pso.ts, 0, n_samples, ts, delay);
 	return SYSOFF_BASIC;
 }
@@ -124,10 +134,13 @@ int sysoff_measure(int fd, int method, int n_samples,
 	switch (method) {
 	case SYSOFF_PRECISE:
 		*delay = 0;
+		printf("sysoff precise\n");
 		return sysoff_precise(fd, result, ts);
 	case SYSOFF_EXTENDED:
+		printf("sysoff extended\n");
 		return sysoff_extended(fd, n_samples, result, ts, delay);
 	case SYSOFF_BASIC:
+		printf("sysoff basic\n");
 		return sysoff_basic(fd, n_samples, result, ts, delay);
 	}
 	return SYSOFF_RUN_TIME_MISSING;

@@ -564,24 +564,31 @@ static void update_clock(struct phc2sys_private *priv, struct clock *clock,
 	if (clock_handle_leap(priv, clock, offset, ts))
 		return;
 
+	printf("pre sync offset offset %ld\n", offset);
 	offset += get_sync_offset(priv, clock);
+	printf("post sync offset offset %ld\n", offset);
 
-	if (clock->sanity_check && clockcheck_sample(clock->sanity_check, ts))
+	if (clock->sanity_check && clockcheck_sample(clock->sanity_check, ts)) {
+		printf("clockcheck_sample failed!\n");
 		servo_reset(clock->servo);
+	}
 
 	ppb = servo_sample(clock->servo, offset, ts, 1.0, &state);
 	clock->servo_state = state;
 
 	switch (state) {
 	case SERVO_UNLOCKED:
+		printf("servo unlocked\n");
 		break;
 	case SERVO_JUMP:
+		printf("servo jump %ld\n", -offset);
 		clockadj_step(clock->clkid, -offset);
 		if (clock->sanity_check)
 			clockcheck_step(clock->sanity_check, -offset);
 		/* Fall through. */
 	case SERVO_LOCKED:
 	case SERVO_LOCKED_STABLE:
+		printf("Servo locked and stable\n");
 		clockadj_set_freq(clock->clkid, -ppb);
 		if (clock->clkid == CLOCK_REALTIME)
 			sysclk_set_sync();
@@ -711,11 +718,13 @@ static int do_loop(struct phc2sys_private *priv)
 	struct clock *clock;
 	uint64_t ts;
 	int64_t offset, delay;
+	int clock_count = 0;
 
 	interval.tv_sec = priv->phc_interval;
 	interval.tv_nsec = (priv->phc_interval - interval.tv_sec) * 1e9;
 
 	while (is_running()) {
+		clock_count = 0;
 		clock_nanosleep(CLOCK_MONOTONIC, 0, &interval, NULL);
 
 		if (pmc_agent_update(priv->agent) < 0) {
@@ -734,26 +743,35 @@ static int do_loop(struct phc2sys_private *priv)
 			continue;
 
 		LIST_FOREACH(clock, &priv->dst_clocks, dst_list) {
-			if (!update_needed(clock))
+			clock_count++;
+			if (!update_needed(clock)) {
+				printf("No updated needed\n");
 				continue;
+			}
 
 			/* don't try to synchronize the clock to itself */
 			if (clock->clkid == priv->master->clkid ||
 			    (clock->phc_index >= 0 &&
 			     clock->phc_index == priv->master->phc_index) ||
-			    !strcmp(clock->device, priv->master->device))
+			    !strcmp(clock->device, priv->master->device)) {
+				printf("Don't sync to ourselves\n");
 				continue;
+			}
 
 			if (clock->clkid == CLOCK_REALTIME &&
 			    priv->master->sysoff_method >= 0) {
+				printf("Use sysoff\n");
 				/* use sysoff */
 				if (sysoff_measure(CLOCKID_TO_FD(priv->master->clkid),
 						   priv->master->sysoff_method,
 						   priv->phc_readings,
 						   &offset, &ts, &delay) < 0)
 					return -1;
+				printf("!sysoff measured offset %ld, ts %lu, delay %ld\n",
+					   offset, ts, delay);
 			} else if (priv->master->clkid == CLOCK_REALTIME &&
 				   clock->sysoff_method >= 0) {
+				printf("use reversed sysoff\n");
 				/* use reversed sysoff */
 				if (sysoff_measure(CLOCKID_TO_FD(clock->clkid),
 						   clock->sysoff_method,
@@ -763,14 +781,19 @@ static int do_loop(struct phc2sys_private *priv)
 				offset = -offset;
 				ts += offset;
 			} else {
+				printf("use phc\n");
 				/* use phc */
 				if (!read_phc(priv->master->clkid, clock->clkid,
 					      priv->phc_readings,
-					      &offset, &ts, &delay))
+					      &offset, &ts, &delay)) {
+					printf("Refused read phc\n");
 					continue;
+				}
 			}
+			printf("calling update clock\n");
 			update_clock(priv, clock, offset, ts, delay);
 		}
+		printf("clock count was %d\n", clock_count);
 	}
 	return 0;
 }
